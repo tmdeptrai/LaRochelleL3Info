@@ -1,0 +1,14 @@
+prefix=/home/tmd/Desktop/LaRochelleL3Info/StructuresDeDonnées/TP1-hash/debug/tmp
+bindir=${prefix}/bin
+staticlibdir=${prefix}/lib
+sharedlibdir=${prefix}/lib
+includedir=${prefix}/include
+
+Version: 
+
+Name: list
+Description: List library
+
+Requires:
+Libs: -L${bindir} -L${staticlibdir} -L${sharedlibdir} -llist
+Cflags: -I${includedir}

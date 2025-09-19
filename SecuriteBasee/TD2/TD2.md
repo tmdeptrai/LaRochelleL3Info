@@ -24,12 +24,15 @@
 
 ### 1.2
 * F1 (Internet <-> DMZ):
-    * Autoriser les connexions entrantes: HTTP (porte 80 ou 433) vers le serveur web, SMTP(25) ou IMAP(143/993)  
+    * Autoriser les connexions entrantes: HTTP (porte 80 ou 433) vers le serveur web, SMTP(25) ou IMAP(143/993), SSH
     * Refuser tout le reste
-    * Autoriser les connexions sortantes: DNS, NTP, mise à jour du système d'exploitation si nécessaire
+    * Autoriser les connexions sortantes: DNS, NTP, HTTPS(mise à jour du système d'exploitation si nécessaire), SMTP
 * F2 (DMZ <-> Réseau Interne):
     * Autoriser les connexions nécessaires: les administrateurs LAN accédant aux serveurs DMZ via SSH/HTTPS
     * Refuser le traffic de la DMZ vers LAN (pas d'accès direct des serveurs publiques aux PC privés)
+
+* F2 (Internet -> LAN):
+    * RIEN (pour protéger LAN qui est privé)
 
 ### 1.3
 Les mises à jour peuvent être effectuées:
@@ -51,33 +54,50 @@ Quels types d'adresses doivent être utilisés derrière F1 ?
 
 # Exercise 2
 
-## F1 – Protecting DMZ from Internet
+## F1
 ```bash
+# Flush to reset
+iptables -F
+iptables -X
+
 # Default: drop everything
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
-iptables -P OUTPUT ACCEPT  # servers may need updates
-
-# Allow established connections (responses)
-iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -P OUTPUT DROP
 
 # Allow NEW connections for public services
-iptables -A INPUT -p tcp --dport 80 -m state --state NEW -j ACCEPT    # HTTP
-iptables -A INPUT -p tcp --dport 443 -m state --state NEW -j ACCEPT   # HTTPS
-iptables -A INPUT -p tcp --dport 25 -m state --state NEW -j ACCEPT    # SMTP
-iptables -A INPUT -p tcp --dport 143 -m state --state NEW -j ACCEPT   # IMAP
+iptables -A FORWARD -p tcp -d 80.12.13.14 --dport 443 -m conntrack --ctstate NEW -j ACCEPT #HTTPS
+iptables -A FORWARD -p tcp -d 80.12.13.14 --dport 80 -m conntrack --ctstate NEW -j ACCEPT  #HTTP
+iptables -A FORWARD -p tcp -d 80.12.13.15 --dport 25 -m conntrack --ctstate NEW -j ACCEPT  #SMTP
+iptables -A FORWARD -p tcp -d 80.12.13.15 --dport 143 -m conntrack --ctstate NEW -j ACCEPT #IMAP
+iptables -A FORWARD -p tcp -d 80.12.13.0/27 --dport 22 -m conntrack --ctstate NEW -j ACCEPT #SSH
+
+# Allow established connections (responses)
+iptables -A FORWARD -p tcp -m conntrack --ctstate ESTABLISHED -j ACCEPT
 
 ```
-
 ## F2 – Protecting Internal LAN
 ```bash
 # Default: drop everything
 iptables -P FORWARD DROP
 
 # Allow internal LAN to access DMZ servers (e.g., SSH for admin)
-iptables -A FORWARD -s 192.168.0.0/24 -d 80.12.13.0/27 -p tcp --dport 22 \
-  -m state --state NEW -j ACCEPT
+iptables -A FORWARD -s 192.168.0.0/24 -d 80.12.13.0/27 -p tcp --dport 22 -m state --state NEW -j ACCEPT
 
 # Allow responses back
-iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A FORWARD -m state --state ESTABLISHED -j ACCEPT
 ```
+
+## Pourquoi utiliser l'état de connexion ?
+
+* **Simplification des règles** :
+
+    Il n'est pas nécessaire d'écrire des règles distinctes pour les réponses entrantes : ESTABLISHED,RELATED autorise automatiquement les paquets de réponse légitimes.
+
+* **Plus sécurisé** :
+
+    Les paquets qui n'appartiennent pas à une session existante sont bloqués par défaut, ce qui réduit le risque de trafic usurpé ou malveillant.
+
+* **Performances améliorées** :
+
+    Le pare-feu peut rapidement associer les paquets aux sessions existantes sans consulter la liste complète des règles.
